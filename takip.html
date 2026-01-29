@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Çalışma Takip v5</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    <style>
+        :root { --bg: #0b0f1a; --card: #161b2c; --primary: #00d2ff; --success: #00ff87; --text: #e2e8f0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 600px; }
+        .card { background: var(--card); border-radius: 24px; padding: 25px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+        
+        /* Header & Progress */
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .total-bar { height: 12px; background: #2d3748; border-radius: 6px; overflow: hidden; margin: 15px 0; }
+        .bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--success)); width: 0%; transition: 1s ease; }
+
+        /* Ders Kartı */
+        .subject-box { background: rgba(255,255,255,0.03); border-radius: 16px; padding: 15px; margin-bottom: 15px; border-left: 4px solid #2d3748; }
+        .subject-box.done { border-left-color: var(--success); }
+        .subject-main { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 1.1rem; }
+        
+        /* Konu / Ekstra Alanı */
+        .extra-list { margin-top: 10px; padding-left: 10px; border-left: 1px dashed #4a5568; }
+        .extra-item { display: flex; gap: 10px; align-items: center; margin-top: 8px; font-size: 0.9rem; }
+        .input-konu { background: none; border: 1px solid #2d3748; color: white; border-radius: 4px; padding: 4px 8px; flex: 1; }
+        .input-soru { width: 50px; background: none; border: 1px solid var(--primary); color: var(--primary); border-radius: 4px; text-align: center; }
+        
+        .btn-plus { background: var(--primary); border: none; color: black; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-weight: bold; }
+        .btn-del { background: none; border: none; color: #ff4d4d; cursor: pointer; font-size: 1.2rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <div class="header-flex">
+            <h2 style="margin:0">📚 Ders & Konu Takibi</h2>
+            <div id="perc-text" style="font-weight:bold; color:var(--success)">%0</div>
+        </div>
+        
+        <div class="total-bar"><div id="main-bar" class="bar-fill"></div></div>
+
+        <div id="subject-list"></div>
+        
+        <button onclick="app.addSubject()" style="width:100%; padding:12px; margin-top:10px; border-radius:12px; border:1px dashed var(--primary); background:none; color:var(--primary); cursor:pointer;">+ Yeni Ders Ekle</button>
+    </div>
+
+    <div class="card">
+        <div class="header-flex">
+            <h2 style="margin:0; font-size:1.1rem">🕌 Namaz Vakitleri</h2>
+            <select id="citySelect" onchange="app.changeCity(this.value)" style="background:#161b2c; color:white; border:1px solid #2d3748; border-radius:6px; padding:4px;">
+                <option value="Istanbul">İstanbul</option>
+                <option value="Ankara">Ankara</option>
+            </select>
+        </div>
+        <div id="vakit-display" style="display:grid; grid-template-columns: repeat(5,1fr); gap:10px; text-align:center; font-size:0.8rem">
+            </div>
+    </div>
+</div>
+
+<script>
+const app = {
+    state: {
+        subjects: [
+            { id: 1, name: 'Matematik', mainDone: false, extras: [{konu: 'Logaritma', soru: 20}] },
+            { id: 2, name: 'Türkçe', mainDone: false, extras: [] }
+        ],
+        city: 'Istanbul'
+    },
+
+    init() {
+        const saved = localStorage.getItem('master_v5');
+        if(saved) this.state = JSON.parse(saved);
+        this.render();
+        this.fetchVakitler();
+    },
+
+    addSubject() {
+        const name = prompt("Ders adı giriniz:");
+        if(name) {
+            this.state.subjects.push({ id: Date.now(), name, mainDone: false, extras: [] });
+            this.save();
+        }
+    },
+
+    addExtra(subId) {
+        const sub = this.state.subjects.find(s => s.id === subId);
+        sub.extras.push({ konu: '', soru: 0 });
+        this.save();
+    },
+
+    updateExtra(subId, index, field, val) {
+        const sub = this.state.subjects.find(s => s.id === subId);
+        sub.extras[index][field] = field === 'soru' ? (parseInt(val) || 0) : val;
+        this.save();
+    },
+
+    toggleMain(subId) {
+        const sub = this.state.subjects.find(s => s.id === subId);
+        sub.mainDone = !sub.mainDone;
+        if(sub.mainDone) confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+        this.save();
+    },
+
+    render() {
+        const list = document.getElementById('subject-list');
+        list.innerHTML = '';
+        let totalSoru = 0;
+
+        this.state.subjects.forEach(sub => {
+            let subSoru = (sub.mainDone ? 35 : 0);
+            sub.extras.forEach(e => subSoru += e.soru);
+            totalSoru += subSoru;
+
+            const html = `
+                <div class="subject-box ${sub.mainDone ? 'done' : ''}">
+                    <div class="subject-main">
+                        <span onclick="app.toggleMain(${sub.id})" style="cursor:pointer">
+                            ${sub.mainDone ? '✅' : '⭕'} ${sub.name} (35)
+                        </span>
+                        <button class="btn-plus" onclick="app.addExtra(${sub.id})">+</button>
+                    </div>
+                    <div class="extra-list">
+                        ${sub.extras.map((ex, i) => `
+                            <div class="extra-item">
+                                <input type="text" class="input-konu" placeholder="Konu yaz..." value="${ex.konu}" onchange="app.updateExtra(${sub.id}, ${i}, 'konu', this.value)">
+                                <input type="number" class="input-soru" value="${ex.soru}" onchange="app.updateExtra(${sub.id}, ${i}, 'soru', this.value)">
+                                <button class="btn-del" onclick="app.deleteExtra(${sub.id}, ${i})">&times;</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            list.insertAdjacentHTML('beforeend', html);
+        });
+
+        const target = this.state.subjects.length * 35;
+        const perc = target > 0 ? Math.round((totalSoru / target) * 100) : 0;
+        document.getElementById('main-bar').style.width = Math.min(perc, 100) + "%";
+        document.getElementById('perc-text').innerText = `%${perc}`;
+    },
+
+    deleteExtra(subId, index) {
+        this.state.subjects.find(s => s.id === subId).extras.splice(index, 1);
+        this.save();
+    },
+
+    save() {
+        localStorage.setItem('master_v5', JSON.stringify(this.state));
+        this.render();
+    },
+
+    async fetchVakitler() {
+        const res = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${this.state.city}&country=Turkey&method=13`);
+        const d = await res.json();
+        const t = d.data.timings;
+        const display = document.getElementById('vakit-display');
+        const list = [['İmsak', t.Fajr], ['Öğle', t.Dhuhr], ['İkindi', t.Asr], ['Akşam', t.Maghrib], ['Yatsı', t.Isha]];
+        display.innerHTML = list.map(v => `<div>${v[0]}<br><b>${v[1]}</b></div>`).join('');
+    },
+
+    changeCity(c) { this.state.city = c; this.fetchVakitler(); this.save(); }
+};
+
+app.init();
+</script>
+</body>
+</html>
